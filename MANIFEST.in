@@ -1,0 +1,18 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include CONTRIBUTING.md
+include requirements.txt
+include pyproject.toml
+recursive-include examples *.py
+recursive-include tests *.py
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * *.so
+recursive-exclude * .DS_Store
+recursive-exclude * .git*
+recursive-exclude * .vscode
+recursive-exclude * .idea
+recursive-exclude * *.log
+recursive-exclude * whatsapp_session
+recursive-exclude * firefox_profile
