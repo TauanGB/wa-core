@@ -94,11 +94,13 @@ class SeleniumDriver:
             print(f"[SeleniumDriver] Erro ao verificar mensagens: {e}")
             return False
 
-    def send_message(self, text: str) -> bool:
+    def send_message(self, phone_number: str, text: str) -> bool:
         """
-        Envia mensagem usando JavaScript para inserir texto e Selenium para enviar.
+        Envia mensagem usando JavaScript para inserir texto e enviar automaticamente.
+        Se o JavaScript falhar, usa Selenium como fallback.
         
         Args:
+            phone_number: Número do telefone para envio
             text: Texto da mensagem a ser enviada
             
         Returns:
@@ -110,25 +112,26 @@ class SeleniumDriver:
                 self.inject_js_script()
                 tm.sleep(1)
             
-            # Usa JavaScript para inserir o texto no campo
+            # Usa JavaScript para inserir o texto no campo e enviar automaticamente
             result = self.driver.execute_script(
                 f'return window.whatsType(arguments[0]);', text
             )
             
             if result:
-                print(f"[SeleniumDriver] Texto inserido via JavaScript: {text}")
-                # Aguarda um momento para o texto ser processado
-                tm.sleep(0.5)
-                
-                # Agora usa Selenium para enviar a mensagem (sem reinserir o texto)
-                return self.send_message_selenium(text, skip_input=True)
+                print(f"[SeleniumDriver] Mensagem enviada via JavaScript para {phone_number}: {text}")
+                # Aguarda um momento para a mensagem ser processada e enviada
+                tm.sleep(1.0)
+                # Fecha o chat após envio bem-sucedido
+                self.close_current_chat()
+                return True
             else:
-                print(f"[SeleniumDriver] Falha ao inserir texto via JavaScript: {text}")
-                # Fallback: usa apenas Selenium (inserindo o texto)
-                return self.send_message_selenium(text, skip_input=False)
+                print(f"[SeleniumDriver] Falha ao enviar via JavaScript para {phone_number}: {text}")
+                # Fallback: usa Selenium para enviar a mensagem
+                print("[SeleniumDriver] Usando fallback Selenium...")
+                return self.send_message_selenium(text)
                 
         except Exception as e:
-            print(f"[SeleniumDriver] Erro ao inserir texto via JavaScript: {e}")
+            print(f"[SeleniumDriver] Erro ao enviar via JavaScript: {e}")
             # Fallback para o método Selenium se o JavaScript falhar
             try:
                 print("[SeleniumDriver] Tentando método Selenium completo...")
@@ -137,13 +140,12 @@ class SeleniumDriver:
                 print(f"[SeleniumDriver] Erro no método Selenium: {e2}")
                 return False
 
-    def send_message_selenium(self, text: str, skip_input: bool = False) -> bool:
+    def send_message_selenium(self, text: str) -> bool:
         """
         Envia mensagem usando Selenium (método alternativo).
         
         Args:
             text: Texto da mensagem
-            skip_input: Se True, não insere o texto (apenas envia)
             
         Returns:
             True se enviou com sucesso, False caso contrário
@@ -156,9 +158,7 @@ class SeleniumDriver:
             
             # Envia a mensagem
             message_input = self.driver.find_element(By.CSS_SELECTOR, 'div[contenteditable="true"]')
-            
-            if not skip_input:
-                message_input.send_keys(text)
+            message_input.send_keys(text)
             
             # Tenta clicar no botão de enviar
             try:
@@ -167,16 +167,33 @@ class SeleniumDriver:
                 )
                 send_button.click()
                 print(f"[SeleniumDriver] Mensagem enviada via Selenium (clique): {text}")
+                # Fecha o chat após envio bem-sucedido
+                self.close_current_chat()
                 return True
             except:
                 # Se não encontrar o botão, tenta Enter como último recurso
                 message_input.send_keys(Keys.ENTER)
                 print(f"[SeleniumDriver] Mensagem enviada via Selenium (Enter): {text}")
+                # Fecha o chat após envio bem-sucedido
+                self.close_current_chat()
                 return True
                 
         except Exception as e:
             print(f"[SeleniumDriver] Erro ao enviar via Selenium: {e}")
             return False
+
+    def get_current_contact(self) -> str:
+        """
+        Obtém o nome do contato atual.
+        
+        Returns:
+            Nome do contato atual ou "Desconhecido" se não conseguir obter
+        """
+        try:
+            header = self.driver.find_element(By.CSS_SELECTOR, 'div#main header')
+            return header.text.split('\n')[0].strip()
+        except:
+            return "Desconhecido"
 
     def get_current_contact(self) -> str:
         """
@@ -229,19 +246,28 @@ class SeleniumDriver:
         except:
             return ""
 
+    def _click_more_button(self):
+        """Clica no botão mais"""
+        try:
+            more = self.driver.find_element(By.CSS_SELECTOR, 'div#main span[data-icon="more-refreshed"]')
+            more.click()
+            return True
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao clicar no botão mais: {e}")
+            return False
+
     def close_current_chat(self):
         """Fecha a conversa atual"""
         try:
-            if self.driver.find_elements(By.CSS_SELECTOR, 'div#main button[aria-label="Mais opções"]'):
-                more = self.driver.find_element(By.CSS_SELECTOR, 'div#main button[aria-label="Mais opções"]')
-                more.click()
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'span[data-icon="close-circle-refreshed"]'))
-                )
-                close_btn = self.driver.find_element(By.CSS_SELECTOR, 'span[data-icon="close-circle-refreshed"]')
-                close_btn.click()
-                tm.sleep(1)
-                print("[SeleniumDriver] Conversa fechada")
+            if not self._click_more_button():
+                return False
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'span[data-icon="close-circle-refreshed"]'))
+            )
+            close_btn = self.driver.find_element(By.CSS_SELECTOR, 'span[data-icon="close-circle-refreshed"]')
+            close_btn.click()
+            tm.sleep(1)
+            print("[SeleniumDriver] Conversa fechada")
         except Exception as e:
             print(f"[SeleniumDriver] Erro ao fechar: {e}")
 
@@ -303,6 +329,31 @@ class SeleniumDriver:
                 el.dispatchEvent(new InputEvent('input', { bubbles: true }));
               }
 
+              // Função para enviar mensagem
+              function sendMessage() {
+                try {
+                  // Tenta encontrar o botão de enviar
+                  const sendButton = document.querySelector('[aria-hidden="true"][data-icon="wds-ic-send-filled"]');
+                  if (sendButton) {
+                    sendButton.click();
+                    console.log('Mensagem enviada via botão');
+                    return true;
+                  } else {
+                    // Se não encontrar o botão, tenta Enter
+                    const composer = getComposer();
+                    if (composer) {
+                      composer.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true}));
+                      console.log('Mensagem enviada via Enter');
+                      return true;
+                    }
+                  }
+                  return false;
+                } catch (e) {
+                  console.error('Erro ao enviar mensagem:', e);
+                  return false;
+                }
+              }
+
               // Exponha uma função global para usar facilmente:
               window.whatsType = function (text, { append = false } = {}) {
                 const composer = getComposer();
@@ -311,11 +362,21 @@ class SeleniumDriver:
                   return false;
                 }
                 setText(composer, text, { append });
-                // Retorna true se conseguiu inserir o texto, mas não tenta enviar
+                
+                // Aguarda um pouco para o texto ser processado
+                setTimeout(() => {
+                  const sent = sendMessage();
+                  if (sent) {
+                    console.log('Mensagem enviada com sucesso via JavaScript');
+                  } else {
+                    console.warn('Falha ao enviar mensagem via JavaScript');
+                  }
+                }, 100);
+                
                 return true;
               };
 
-              console.log('Pronto! Use: whatsType("Sua mensagem aqui") - O envio será feito via Selenium');
+              console.log('Pronto! Use: whatsType("Sua mensagem aqui") - O envio será feito automaticamente via JavaScript');
             })();
             """
             

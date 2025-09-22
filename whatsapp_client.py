@@ -39,17 +39,19 @@ class WhatsAppClient:
         """
         return self.driver.check_for_new_messages()
 
-    def send_message(self, text: str) -> bool:
+    def send_message(self, phone_number: str, phone_name: str, text: str) -> bool:
         """
         Envia uma mensagem no WhatsApp.
         
         Args:
+            phone_number: Número do telefone para envio
+            phone_name: Nome do telefone para envio
             text: Texto da mensagem a ser enviada
             
         Returns:
             True se enviou com sucesso, False caso contrário
         """
-        return self.driver.send_message(text)
+        return self.driver.send_message(phone_number, phone_name, text)
 
     def get_current_contact(self) -> str:
         """

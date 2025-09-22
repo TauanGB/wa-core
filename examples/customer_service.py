@@ -180,7 +180,7 @@ Obrigado pela paciência! 🙏
                 response = self.process_message(customer, message)
                 
                 # Envia resposta
-                if self.client.send_message(response):
+                if self.client.send_message(customer, response):
                     print(f"✅ Resposta enviada para {customer}")
                     
                     # Atualiza dados do cliente

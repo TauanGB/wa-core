@@ -98,7 +98,7 @@ Obrigado! 😊
                         # Processa e envia resposta
                         response = self.process_message(message)
                         
-                        if self.client.send_message(response):
+                        if self.client.send_message(contact, response):
                             print(f"✅ Resposta enviada para {contact}")
                             
                             # Registra a interação

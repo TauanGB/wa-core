@@ -72,7 +72,7 @@ Exemplos de uso:
                 print(f"[CLI] Enviando mensagem para {args.contact}: {args.send_message}")
                 # Aqui você implementaria a lógica para encontrar o contato
                 # Por simplicidade, assumimos que o contato já está aberto
-                success = client.send_message(args.send_message)
+                success = client.send_message(args.contact, args.send_message)
                 if success:
                     print("[CLI] Mensagem enviada com sucesso!")
                 else:

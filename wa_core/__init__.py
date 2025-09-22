@@ -10,8 +10,9 @@ Exemplo de uso:
     client = WhatsAppClient()
     if client.check_for_new_messages():
         client.click_unread_message()
+        contact_info = client.get_current_contact_info("", "")
         message = client.get_last_message()
-        client.send_message("Olá! Como posso ajudar?")
+        client.send_message(contact_info['numero'], contact_info['nome'], "Olá! Como posso ajudar?")
     client.close()
 """
 

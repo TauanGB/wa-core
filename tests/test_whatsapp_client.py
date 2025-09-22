@@ -57,10 +57,10 @@ class TestWhatsAppClient:
         mock_driver.return_value = mock_driver_instance
         
         client = WhatsAppClient(self.temp_dir)
-        result = client.send_message("Teste")
+        result = client.send_message("5511999999999", "Teste")
         
         assert result is True
-        mock_driver_instance.send_message.assert_called_once_with("Teste")
+        mock_driver_instance.send_message.assert_called_once_with("5511999999999", "Teste")
     
     @patch('wa_core.whatsapp_client.SeleniumDriver')
     def test_send_message_failure(self, mock_driver):
@@ -70,10 +70,10 @@ class TestWhatsAppClient:
         mock_driver.return_value = mock_driver_instance
         
         client = WhatsAppClient(self.temp_dir)
-        result = client.send_message("Teste")
+        result = client.send_message("5511999999999", "Teste")
         
         assert result is False
-        mock_driver_instance.send_message.assert_called_once_with("Teste")
+        mock_driver_instance.send_message.assert_called_once_with("5511999999999", "Teste")
     
     @patch('wa_core.whatsapp_client.SeleniumDriver')
     def test_get_current_contact(self, mock_driver):

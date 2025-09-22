@@ -6,7 +6,9 @@ import json
 import os
 import signal
 import sys
+import importlib
 from selenium import webdriver
+from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
@@ -15,10 +17,15 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from .exceptions import SeleniumDriverError, WhatsAppConnectionError
+from .selectors import WhatsAppSelectors
 
 
 class SeleniumDriver:
     """Driver Selenium para automação do WhatsApp Web"""
+    
+    # =============================================================================
+    # CONSTRUTOR E INICIALIZAÇÃO
+    # =============================================================================
     
     def __init__(self, session_path: str = "whatsapp_session"):
         """
@@ -62,6 +69,10 @@ class SeleniumDriver:
             print("[SeleniumDriver] Nenhuma sessão encontrada, aguardando login...")
             self.wait_for_login()
 
+    # =============================================================================
+    # MÉTODOS PÚBLICOS - AUTENTICAÇÃO E SESSÃO
+    # =============================================================================
+    
     def wait_for_login(self):
         """Aguarda login no WhatsApp Web"""
         print("[SeleniumDriver] Aguardando login...")
@@ -70,7 +81,7 @@ class SeleniumDriver:
         while True:
             try:
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div[aria-label="Lista de conversas"]'))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_LOCK_OUTLINE))
                 )
                 print("[SeleniumDriver] Conectado ao WhatsApp!")
                 
@@ -80,256 +91,6 @@ class SeleniumDriver:
             except:
                 print("[SeleniumDriver] Aguardando...")
                 tm.sleep(1)
-
-    def check_for_new_messages(self) -> bool:
-        """
-        Verifica se há novas mensagens não lidas.
-        
-        Returns:
-            True se há mensagens não lidas, False caso contrário
-        """
-        try:
-            # Verifica se há mensagens não lidas
-            unread = self.driver.find_elements(By.CSS_SELECTOR, 'span[aria-label*="não lida"]')
-            return len(unread) > 0
-        except Exception as e:
-            print(f"[SeleniumDriver] Erro ao verificar mensagens: {e}")
-            return False
-
-    def send_message(self, text: str) -> bool:
-        """
-        Envia mensagem usando JavaScript para inserir texto e Selenium para enviar.
-        
-        Args:
-            text: Texto da mensagem a ser enviada
-            
-        Returns:
-            True se enviou com sucesso, False caso contrário
-        """
-        try:
-            # Primeiro injeta o script se ainda não estiver disponível
-            if not self.driver.execute_script('return typeof window.whatsType === "function"'):
-                self.inject_js_script()
-                tm.sleep(1)
-            
-            # Usa JavaScript para inserir o texto no campo
-            result = self.driver.execute_script(
-                f'return window.whatsType(arguments[0]);', text
-            )
-            
-            if result:
-                print(f"[SeleniumDriver] Texto inserido via JavaScript: {text}")
-                # Aguarda um momento para o texto ser processado
-                tm.sleep(0.5)
-                
-                # Agora usa Selenium para enviar a mensagem (sem reinserir o texto)
-                return self.send_message_selenium(text, skip_input=True)
-            else:
-                print(f"[SeleniumDriver] Falha ao inserir texto via JavaScript: {text}")
-                # Fallback: usa apenas Selenium (inserindo o texto)
-                return self.send_message_selenium(text, skip_input=False)
-                
-        except Exception as e:
-            print(f"[SeleniumDriver] Erro ao inserir texto via JavaScript: {e}")
-            # Fallback para o método Selenium se o JavaScript falhar
-            try:
-                print("[SeleniumDriver] Tentando método Selenium completo...")
-                return self.send_message_selenium(text)
-            except Exception as e2:
-                print(f"[SeleniumDriver] Erro no método Selenium: {e2}")
-                return False
-
-    def send_message_selenium(self, text: str, skip_input: bool = False) -> bool:
-        """
-        Envia mensagem usando Selenium (método alternativo).
-        
-        Args:
-            text: Texto da mensagem
-            skip_input: Se True, não insere o texto (apenas envia)
-            
-        Returns:
-            True se enviou com sucesso, False caso contrário
-        """
-        try:
-            # Aguarda o campo de mensagem aparecer
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'div[contenteditable="true"]'))
-            )
-            
-            # Envia a mensagem
-            message_input = self.driver.find_element(By.CSS_SELECTOR, 'div[contenteditable="true"]')
-            
-            if not skip_input:
-                message_input.send_keys(text)
-            
-            # Tenta clicar no botão de enviar
-            try:
-                send_button = WebDriverWait(self.driver, 5).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[aria-hidden="true"][data-icon="wds-ic-send-filled"]'))
-                )
-                send_button.click()
-                print(f"[SeleniumDriver] Mensagem enviada via Selenium (clique): {text}")
-                return True
-            except:
-                # Se não encontrar o botão, tenta Enter como último recurso
-                message_input.send_keys(Keys.ENTER)
-                print(f"[SeleniumDriver] Mensagem enviada via Selenium (Enter): {text}")
-                return True
-                
-        except Exception as e:
-            print(f"[SeleniumDriver] Erro ao enviar via Selenium: {e}")
-            return False
-
-    def get_current_contact(self) -> str:
-        """
-        Obtém o nome do contato atual.
-        
-        Returns:
-            Nome do contato atual ou "Desconhecido" se não conseguir obter
-        """
-        try:
-            header = self.driver.find_element(By.CSS_SELECTOR, 'div#main header')
-            return header.text.split('\n')[0].strip()
-        except:
-            return "Desconhecido"
-
-    def click_unread_message(self) -> bool:
-        """
-        Clica na primeira mensagem não lida.
-        
-        Returns:
-            True se clicou com sucesso, False caso contrário
-        """
-        try:
-            unread = self.driver.find_elements(By.CSS_SELECTOR, 'span[aria-label*="não lida"]')
-            if unread:
-                while True:
-                    try:
-                        unread[1].click()
-                        WebDriverWait(self.driver, 2).until(
-                            EC.presence_of_element_located((By.CSS_SELECTOR, 'div#main header'))
-                        )
-                        return True
-                    except:
-                        tm.sleep(1)
-        except Exception as e:
-            print(f"[SeleniumDriver] Erro ao clicar: {e}")
-        return False
-
-    def get_last_message(self) -> str:
-        """
-        Obtém a última mensagem recebida.
-        
-        Returns:
-            Texto da última mensagem ou string vazia se não conseguir obter
-        """
-        try:
-            messages = self.driver.find_elements(By.CSS_SELECTOR, 'div[class*="message-in"] [class*="selectable-text copyable-text"]')
-            if messages:
-                return messages[-1].text.strip()
-            return ""
-        except:
-            return ""
-
-    def close_current_chat(self):
-        """Fecha a conversa atual"""
-        try:
-            if self.driver.find_elements(By.CSS_SELECTOR, 'div#main button[aria-label="Mais opções"]'):
-                more = self.driver.find_element(By.CSS_SELECTOR, 'div#main button[aria-label="Mais opções"]')
-                more.click()
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'span[data-icon="close-circle-refreshed"]'))
-                )
-                close_btn = self.driver.find_element(By.CSS_SELECTOR, 'span[data-icon="close-circle-refreshed"]')
-                close_btn.click()
-                tm.sleep(1)
-                print("[SeleniumDriver] Conversa fechada")
-        except Exception as e:
-            print(f"[SeleniumDriver] Erro ao fechar: {e}")
-
-    def inject_js_script(self) -> bool:
-        """
-        Injeta o script JavaScript na página para permitir uso manual da função whatsType.
-        
-        Returns:
-            True se injetou com sucesso, False caso contrário
-        """
-        try:
-            js_script = """
-            (() => {
-              // Tenta localizar o compositor da mensagem de forma robusta (PT/EN/ES e variações do WhatsApp)
-              function getComposer() {
-                const all = [...document.querySelectorAll('[contenteditable="true"]')];
-                const candidates = all.filter(el => {
-                  const ph = (el.getAttribute('aria-placeholder') || el.getAttribute('placeholder') || '').toLowerCase();
-                  const role = el.getAttribute('role');
-                  const dataTab = el.getAttribute('data-tab');
-                  // Heurísticas comuns no WhatsApp Web
-                  const looksLikeComposer =
-                    ph.includes('mensagem') || ph.includes('message') || ph.includes('mensaje') ||
-                    role === 'textbox' || dataTab === '10' || dataTab === '6';
-                  // Mantém apenas os visíveis
-                  const rect = el.getBoundingClientRect();
-                  const visible = rect.width > 0 && rect.height > 0;
-                  return looksLikeComposer && visible;
-                });
-                // Normalmente o compositor fica mais para baixo na tela
-                return candidates.sort((a, b) => b.getBoundingClientRect().top - a.getBoundingClientRect().top)[0] || null;
-              }
-
-              function setText(el, text, { append = false } = {}) {
-                el.focus();
-
-                // Limpa o campo (se não for append)
-                if (!append) {
-                  const sel = window.getSelection();
-                  sel.removeAllRanges();
-                  const range = document.createRange();
-                  range.selectNodeContents(el);
-                  sel.addRange(range);
-                  document.execCommand('delete');
-                  el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-                }
-
-                // Insere texto de forma compatível com apps baseados em React
-                const parts = String(text).split(/\\n/);
-                parts.forEach((p, i) => {
-                    if (p) document.execCommand('insertText', false, p);
-                    if (i < parts.length - 1) {
-                        el.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter',code: 'Enter',keyCode: 13,which: 13,shiftKey: true,bubbles: true,cancelable: true,composed: true}));
-                        el.dispatchEvent(new KeyboardEvent('keypress', {key: 'Enter',code: 'Enter',keyCode: 13,which: 13,shiftKey: true,bubbles: true,cancelable: true,composed: true}));
-                        el.dispatchEvent(new KeyboardEvent('keyup', {key: 'Enter',code: 'Enter',keyCode: 13,which: 13,shiftKey: true,bubbles: true,cancelable: true,composed: true}));
-                    }
-                });
-                console.log('Texto inserido:', text);
-                el.dispatchEvent(new InputEvent('input', { bubbles: true }));
-              }
-
-              // Exponha uma função global para usar facilmente:
-              window.whatsType = function (text, { append = false } = {}) {
-                const composer = getComposer();
-                if (!composer) {
-                  console.warn('Não encontrei o campo de mensagem. Abra uma conversa e tente novamente.');
-                  return false;
-                }
-                setText(composer, text, { append });
-                // Retorna true se conseguiu inserir o texto, mas não tenta enviar
-                return true;
-              };
-
-              console.log('Pronto! Use: whatsType("Sua mensagem aqui") - O envio será feito via Selenium');
-            })();
-            """
-            
-            # Injeta o script JavaScript na página
-            self.driver.execute_script(js_script)
-            print("[SeleniumDriver] Script JavaScript injetado com sucesso!")
-            print("[SeleniumDriver] Agora você pode usar 'whatsType(\"mensagem\")' no console do navegador")
-            return True
-            
-        except Exception as e:
-            print(f"[SeleniumDriver] Erro ao injetar script JavaScript: {e}")
-            return False
 
     def load_session(self) -> bool:
         """
@@ -346,7 +107,7 @@ class SeleniumDriver:
             try:
                 # Tenta encontrar a lista de conversas (indica que está logado)
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div[aria-label="Lista de conversas"]'))
+                    EC.presence_of_element_located((By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_CONVERSATIONS_LIST))
                 )
                 print("[SeleniumDriver] Sessão ativa detectada - já logado!")
                 self.save_session()  # Salva a sessão ativa
@@ -354,7 +115,7 @@ class SeleniumDriver:
             except:
                 # Se não encontrar, verifica se há QR code (indica não logado)
                 try:
-                    qr_code = self.driver.find_element(By.CSS_SELECTOR, 'canvas[aria-label="Código QR"]')
+                    qr_code = self.driver.find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_QR_CODE)
                     print("[SeleniumDriver] QR Code detectado - precisa fazer login")
                     return False
                 except:
@@ -391,6 +152,296 @@ class SeleniumDriver:
             print(f"[SeleniumDriver] Erro ao salvar sessão: {e}")
             return False
 
+    # =============================================================================
+    # MÉTODOS PÚBLICOS - MENSAGENS E CONTATOS
+    # =============================================================================
+    
+    def check_for_new_messages(self) -> list:
+        """
+        Verifica se há novas mensagens não lidas.
+        
+        Returns:
+            Lista de mensagens não lidas
+        """
+        try:
+            new_messages = self.pass_if_have_new_messages()
+            
+            if new_messages:
+                unread = []
+                #TODO Terminar de implementar
+                for chat in new_messages:
+                    contact_name = chat.find_element(By.XPATH, WhatsAppSelectors.XPATH_UNREAD_MESSAGES_CONTACT_NAME).text.strip()
+                    messages_number = chat.find_element(By.XPATH, WhatsAppSelectors.XPATH_UNREAD_MESSAGES_COUNT).text.strip()
+                    
+                    unread.append({
+                        'contact_name': contact_name,
+                        'messages_number': messages_number
+                    })
+
+                    
+                    
+            unread = self.driver.find_elements(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_UNREAD_MESSAGES)
+            return unread
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao verificar mensagens: {e}")
+            return []
+
+    def send_message(self, phone_number: str, phone_name: str, text: str) -> bool:
+        """
+        Envia uma mensagem utilizando dois métodos diferentes para abrir a conversa e para enviar o texto.
+        
+        Args:
+            phone_number: Número do telefone para envio
+            phone_name: Nome do contato para envio
+            text: Texto da mensagem a ser enviada
+            
+        Returns:
+            True se enviou com sucesso, False caso contrário
+        """
+        # Validação de parâmetros
+        if not phone_number or not phone_name or not text or not (len(phone_number) >= 12 and len(phone_number) <= 13):
+            print("[SeleniumDriver] Parâmetros inválidos: phone_number, phone_name e text são obrigatórios")
+            return False
+        
+        try:
+            # Tenta abrir a conversa pelo método Selenium, se falhar tenta pelo URL
+            chat_opened = self._open_chat_by_javaScript_injetado(phone_number, phone_name, text)
+            if not chat_opened:
+                print("[SeleniumDriver] Tentando método alternativo (URL)...")
+                chat_opened = self._open_chat_by_url(phone_number, phone_name, text)
+            
+            if not chat_opened:
+                print("[SeleniumDriver] Falha ao abrir conversa por ambos os métodos")
+                return False
+
+            # Tenta inserir o texto pelo Selenium, se falhar tenta via JavaScript
+            text_inserted = self._send_input_text_by_javascript(phone_number, phone_name, text)
+            if not text_inserted:
+                print("[SeleniumDriver] Tentando inserção via Selenium...")
+                
+            if self._wait_is_message_inserted_in_input(text):
+                print("[SeleniumDriver] Texto inserido com sucesso")
+            else:
+                print("[SeleniumDriver] Falha ao inserir texto")
+                return False
+
+            # Tenta enviar a mensagem pressionando Enter, se falhar tenta clicar no botão
+            last_message = self.driver.find_elements(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MESSAGE_OUT)[-1]
+            
+            if not self._click_send_button_by_click():
+                print("[SeleniumDriver] Tentando envio por clique no botão...")
+                tm.sleep(1)
+                
+            # Verifica se a mensagem foi enviada
+            if self._is_message_sent(last_message):
+                print(f"[SeleniumDriver] Mensagem enviada com sucesso para {phone_name} ({phone_number})")
+            else:
+                print("[SeleniumDriver] Mensagem não enviada")
+                return False
+
+            self._close_current_chat()
+            
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro inesperado ao enviar mensagem: {e}")
+            return False
+        
+    def get_messages_by_contact(self, phone_number: str, phone_name: str, messages_quantity: int = 1) -> dict:
+        """
+        Obtém as mensagens do contato.
+        
+        Args:
+            phone_number: Número do telefone
+            phone_name: Nome do contato
+            messages_quantity: Quantidade de mensagens a serem obtidas
+        Returns:
+            Dict com as mensagens do contato
+        """
+        try:
+            self._open_chat_by_javaScript_injetado(phone_number, phone_name, "")
+        except:
+            print("[SeleniumDriver] Erro ao abrir conversa pelo javaScript injetado")
+            try:
+                self._open_chat_by_url(phone_number, phone_name, "")
+            except:
+                print("[SeleniumDriver] Erro ao abrir conversa pelo URL")
+                raise Exception("Erro ao abrir conversa por ambos os métodos")
+            
+        messages = self.driver.find_elements(By.XPATH, WhatsAppSelectors.XPATH_MESSAGE_IN)[:(messages_quantity*-1)]
+        messages_list = {}
+
+        for message in messages:
+            text = message.find_element(By.XPATH, WhatsAppSelectors.XPATH_MESSAGE_TEXT).text.strip()
+            date = message.find_element(By.XPATH, WhatsAppSelectors.XPATH_MESSAGE_DATE).get_attribute('data-pre-plain-text')
+            messages_list[text] = date
+        return {
+            'messages': messages_list,
+            'phone_number': phone_number,
+            'phone_name': phone_name
+        }
+
+    def get_contact_info(self, phone_number: str, phone_name: str) -> dict:
+        """
+        Obtém informações completas do contato atual (nome e número).
+        
+        Args:
+            phone_number: Número do telefone
+            phone_name: Nome do contato
+            
+        Returns:
+            Dict com 'nome' e 'numero' do contato atual
+        """
+        try:
+            #entra no contato
+            try:
+                self._open_chat_by_javaScript_injetado(phone_number, phone_name, "")
+            except:
+                print("[SeleniumDriver] Erro ao abrir conversa pelo Selenium")
+                try:
+                    self._open_chat_by_url(phone_number, phone_name, "")
+                except:
+                    print("[SeleniumDriver] Erro ao abrir conversa pelo Selenium")
+                raise Exception("Erro ao abrir conversa por ambos os métodos")
+            
+            # Obtém o nome do contato
+            nome_contato = "Desconhecido"
+            try:
+                header = self.driver.find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MAIN_HEADER)
+                nome_contato = header.find_element(By.XPATH, WhatsAppSelectors.XPATH_CONTACT_NAME_IN_HEADER).text.strip()
+            except:
+                print("[SeleniumDriver] Erro ao obter nome do contato")
+            
+            # Obtém o número do contato
+            numero_contato = None
+            try:
+                # Verifica se existe o botão "mais" (três pontos)
+                if self.driver.find_elements(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MORE_BUTTON):
+                    
+                    if not self._click_more_button():
+                        raise Exception("[SeleniumDriver] Erro ao clicar no botão mais")
+                    
+                    # Aguarda o botão de informações aparecer
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, WhatsAppSelectors.XPATH_INFO_BUTTON))
+                    )
+                    info_btn = self.driver.find_element(By.XPATH, WhatsAppSelectors.XPATH_INFO_BUTTON)
+                    info_btn.click()
+
+                    # Aguarda o número aparecer
+                    WebDriverWait(self.driver, 10).until(EC.visibility_of_element_located((By.XPATH, WhatsAppSelectors.XPATH_CONTACT_NUMBER)))
+                    
+                    # Tenta obter o número do contato com persistência (até 5 tentativas)
+                    tentativas = 0
+                    contact_number = None
+                    while tentativas < 5:
+                        try:
+                            contact_number = self.driver.find_element(By.XPATH, WhatsAppSelectors.XPATH_CONTACT_NUMBER).text
+                            if contact_number and contact_number.strip() != "":
+                                break
+                            else:
+                                print(f"[SeleniumDriver] Tentativa {tentativas} de 5: Número do contato não encontrado")
+                        except:
+                            pass
+                        tm.sleep(1)
+                        tentativas += 1
+                    
+                    if not contact_number:
+                        raise Exception("[SeleniumDriver] Número do contato não encontrado")
+                    else:
+                        numero_contato = contact_number.strip()
+                    
+                    # Fechando informações do contato
+                    try:
+                        close_btn = self.driver.find_element(By.XPATH, WhatsAppSelectors.XPATH_CLOSE_INFO_BUTTON)
+                        close_btn.click()
+                    except:
+                        print("[SeleniumDriver] Erro ao fechar informações do contato")
+                        print("[SeleniumDriver] Reiniciando pagina para fechar informações do contato")
+                        if not self._reload_page():
+                            raise Exception("[SeleniumDriver] Erro ao reiniciar pagina")
+            except Exception as e:
+                print(f"[SeleniumDriver] Erro ao obter número do contato: {e}")
+                
+            return {
+                'nome': nome_contato,
+                'numero': numero_contato
+            }
+                
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro geral ao obter informações do contato: {e}")
+            return {
+                'nome': "Desconhecido",
+                'numero': ""
+            }
+
+    # =============================================================================
+    # MÉTODOS PÚBLICOS - UTILITÁRIOS E JAVASCRIPT
+    # =============================================================================
+    
+    def reload_selectors(self) -> bool:
+        """
+        Recarrega os seletores do arquivo JSON e atualiza as variáveis.
+        
+        Returns:
+            True se recarregou com sucesso, False caso contrário
+        """
+        try:
+            # Usa o método reload_selectors da instância global
+            sucesso = WhatsAppSelectors.reload_selectors()
+            
+            if sucesso:
+                print("[SeleniumDriver] Seletores recarregados do JSON com sucesso!")
+            else:
+                print("[SeleniumDriver] Falha ao recarregar seletores do JSON")
+            
+            return sucesso
+            
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao recarregar seletores: {e}")
+            return False
+    
+    def inject_js_script(self) -> bool:
+        """
+        Injeta o script JavaScript na página para permitir uso manual da função whatsType.
+        
+        Returns:
+            True se injetou com sucesso, False caso contrário
+        """
+        try:
+            # Verificar se já foi injetado
+            if self.driver.execute_script("return typeof window.whatsType === 'function'"):
+                print("[SeleniumDriver] Script já foi injetado anteriormente")
+            
+            
+            # Carregar script do arquivo externo
+            script_path = os.path.join(os.path.dirname(__file__), 'whatsapp_scripts.js')
+            
+            if not os.path.exists(script_path):
+                print(f"[SeleniumDriver] Arquivo de script não encontrado: {script_path}")
+                return False
+            
+            with open(script_path, 'r', encoding='utf-8') as f:
+                js_script = f.read()
+            
+            # Injeta o script JavaScript na página
+            result = self.driver.execute_script(js_script)
+            
+            # Validação: Verificar se a injeção foi bem-sucedida
+            if self.driver.execute_script("return typeof window.whatsType === 'function'"):
+                print("[SeleniumDriver] Script JavaScript injetado com sucesso!")
+                print("[SeleniumDriver] Agora você pode usar 'whatsType(\"mensagem\")' no console do navegador")
+                return True
+            else:
+                print("[SeleniumDriver] Falha na validação do script injetado")
+                return False
+            
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao injetar script JavaScript: {e}")
+            return False
+
+    # =============================================================================
+    # MÉTODOS PÚBLICOS - CONTROLE E FINALIZAÇÃO
+    # =============================================================================
+    
     def signal_handler(self, signum, frame):
         """
         Trata sinais de interrupção (Ctrl+C, SIGTERM) para fechar o driver automaticamente.
@@ -409,3 +460,312 @@ class SeleniumDriver:
             print("[SeleniumDriver] Driver fechado, sessão salva")
         except:
             pass
+
+    # =============================================================================
+    # MÉTODOS PRIVADOS - VERIFICAÇÃO DE ESTADO
+    # =============================================================================
+    
+    def _is_message_sent(self,last_message: WebElement) -> bool:
+        """
+        Verifica se a mensagem foi enviada.
+        
+        Args:
+            last_message: Última mensagem enviada
+        """
+        try:
+            tentativas = 0
+            max_tentativas = 10
+            while tentativas < max_tentativas:
+                #verifica se a ultima mensagem enviada é a mesma que a ultima mensagem na lista de mensagens enviadas
+                if last_message != self.driver.find_elements(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MESSAGE_OUT)[-1]:
+                    mensagem_enviada_icone = self.driver.find_elements(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MESSAGE_OUT)[-1].find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MESSAGE_OUT_ICON)
+                    if mensagem_enviada_icone.get_attribute('data-icon') in ('msg-dblcheck','msg-check'):
+                        return True
+                    tm.sleep(1)
+                else:
+                    #se a ultima mensagem enviada não é a mesma que a ultima mensagem na lista de mensagens enviadas, espera 1 segundo e tenta novamente
+                    tm.sleep(1)
+                    tentativas += 1
+                    print(f"[SeleniumDriver] Tentativa {tentativas} de {max_tentativas}: Verificando se a mensagem foi enviada")
+            else:
+                return False
+
+        except:
+            return False
+        
+    def _wait_is_number_inserted_in_input(self, text: str) -> bool:
+        """
+        Verifica se o número foi inserido no campo de pesquisa.
+        
+        Args:
+            text: Número do telefone
+        """
+        try:
+            tentativas = 0
+            while True:
+                try:
+                    print(f"[SeleniumDriver] Tentativa {tentativas} de 5: Verificando se o número foi inserido no campo de pesquisa: {text}")
+                    return text in self.driver.find_element(By.XPATH, WhatsAppSelectors.XPATH_SEARCH_INPUT).text
+                except Exception as e:
+                    print(f"[SeleniumDriver] Erro ao verificar se o número foi inserido no campo de pesquisa: {e}")
+                    tm.sleep(1)
+                    tentativas += 1
+                    if tentativas >= 5:
+                        return False
+        except:
+            return False
+
+    def _wait_is_message_inserted_in_input(self, text: str) -> bool:
+        """
+        Verifica se o texto foi inserido no campo de mensagem.
+        
+        Args:
+            text: Texto da mensagem
+        """
+        try:
+            tentativas = 0
+            while True:
+                try:
+                    print(f"[SeleniumDriver] Tentativa {tentativas} de 5: Verificando se o texto foi inserido no campo de mensagem: {text}")
+                    return text in self.driver.find_element(By.XPATH, WhatsAppSelectors.XPATH_MESSAGE_INPUT).text
+                except Exception as e:
+                    print(f"[SeleniumDriver] Erro ao verificar se o texto foi inserido no campo de mensagem: {e}")
+                    tm.sleep(1)
+                    tentativas += 1
+                    if tentativas >= 5:
+                        return False
+        except:
+            return False
+
+    def pass_if_have_new_messages(self) -> list:
+        """
+        Passa se tiver novas mensagens.
+        
+        Returns:
+            Lista de mensagens não lidas
+        """
+        try:
+            messages = self.driver.find_elements(By.XPATH, WhatsAppSelectors.XPATH_NEW_MESSAGES_CHECK)
+            if messages:
+                return messages[1:]
+            return []
+        except:
+            raise Exception("[SeleniumDriver] Erro ao verificar novas mensagens")
+
+    # =============================================================================
+    # MÉTODOS PRIVADOS - ABERTURA DE CONVERSAS
+    # =============================================================================
+    
+    def _open_chat_by_javaScript_injetado(self, phone_number: str, phone_name: str, text: str) -> bool:
+        """
+        Abre conversa usando Selenium para buscar e selecionar contato.
+        
+        Args:
+            phone_number: Número do telefone
+            phone_name: Nome do contato
+            text: Texto da mensagem (não usado nesta função)
+            
+        Returns:
+            True se conseguiu abrir a conversa, False caso contrário
+        """
+        try:
+            # Executa script para buscar o contato
+            # Verifica se a função sendToWhatsAppSearch já foi injetada no contexto da página
+            is_injetada = self.driver.execute_script("return typeof sendToWhatsAppSearch === 'function';")
+            if not is_injetada:
+                self.inject_js_script()
+                tm.sleep(1)
+                print("[SeleniumDriver] Função sendToWhatsAppSearch não encontrada. Injete o script JS antes de usar esta função.")
+                return False
+            self.driver.set_script_timeout(10)
+            
+            self.driver.execute_script(f'''return sendToWhatsAppSearch("{phone_number.replace('+', '')[2:]}");''')
+            tm.sleep(1)
+
+            self._wait_is_number_inserted_in_input(text)
+
+            
+            # Verifica se encontrou exatamente um contato
+            tentativas = 0
+            max_tentativas = 3
+            while tentativas < max_tentativas:
+                contacts = self.driver.find_elements(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_CONTACTS_LIST)
+                if len(contacts) == 2:  # 1 resultado + header
+                    if phone_name in contacts[1].find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_CONTACT_SPAN).text:
+                        contacts[1].click()
+                        contacts[1].click()
+                        break
+                    else:
+                        print(f"[SeleniumDriver] Contato {phone_name} não encontrado (tentativa {tentativas+1})")
+                        tentativas += 1
+                        tm.sleep(1)
+                else:
+                    print(f"[SeleniumDriver] Busca retornou {len(contacts)} resultados, esperado 2 (tentativa {tentativas+1})")
+                    tentativas += 1
+                    tm.sleep(1)
+            else:
+                print(f"[SeleniumDriver] Não foi possível encontrar o contato {phone_name} após {max_tentativas} tentativas")
+                return False
+
+            # Fecha a busca
+            close_btn = self.driver.find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_CLOSE_BUTTON)
+            close_btn.click()
+            
+            # Aguarda o campo de mensagem aparecer
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MESSAGE_COMPOSER))
+            )
+            print(f"[SeleniumDriver] Conversa aberta com sucesso para {phone_name}")
+            return True
+                
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao abrir conversa pelo Selenium: {e}")
+            return False
+    
+    def _open_chat_by_url(self, phone_number: str, phone_name: str, text: str) -> bool:
+        """
+        Abre conversa usando URL direta do WhatsApp Web.
+        
+        Args:
+            phone_number: Número do telefone
+            phone_name: Nome do contato
+            text: Texto da mensagem (incluído na URL)
+            
+        Returns:
+            True se conseguiu abrir a conversa, False caso contrário
+        """
+        try:
+            # Constrói URL com número e texto
+            clean_number = phone_number.replace('+', '').replace(' ', '')
+            url = f"https://web.whatsapp.com/send?phone={clean_number}&text={text}"
+            
+            print(f"[SeleniumDriver] Navegando para URL: {url}")
+            self.driver.get(url)
+            
+            # Aguarda o campo de mensagem aparecer
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MESSAGE_COMPOSER))
+            )
+            
+            print(f"[SeleniumDriver] Conversa aberta via URL para {phone_name}")
+            return True
+            
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao abrir conversa pelo URL: {e}")
+            return False
+
+    # =============================================================================
+    # MÉTODOS PRIVADOS - ENVIO DE MENSAGENS
+    # =============================================================================
+    
+    def _send_input_text_by_javascript(self, phone_number: str, phone_name: str, text: str) -> bool:
+        """
+        Insere texto no campo de mensagem usando JavaScript.
+        
+        Args:
+            phone_number: Número do telefone
+            phone_name: Nome do contato
+            text: Texto a ser inserido
+            
+        Returns:
+            True se conseguiu inserir o texto, False caso contrário
+        """
+        try:
+            # Primeiro injeta o script se ainda não estiver disponível
+            if not self.driver.execute_script('return typeof window.whatsType === "function"'):
+                if not self.inject_js_script():
+                    print("[SeleniumDriver] Falha ao injetar script JavaScript")
+                    return False
+                tm.sleep(1)
+            
+            # Usa JavaScript para inserir o texto no campo
+            result = self.driver.execute_script(
+                f'return window.whatsType(arguments[0]);', text
+            )
+            
+            if text in self.driver.page_source:
+                print(f"[SeleniumDriver] Texto inserido via JavaScript para {phone_name} ({phone_number}): {text}")
+                return True
+            else:
+                print("[SeleniumDriver] JavaScript retornou False ao inserir texto")
+                return False
+                
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao inserir texto via JavaScript: {e}")
+            return False
+
+
+    def _click_send_button_by_enter(self) -> bool:
+        """
+        Envia mensagem pressionando Enter no campo de texto.
+        
+        Returns:
+            True se conseguiu enviar, False caso contrário
+        """
+        try:
+            message_input = self.driver.find_element(By.XPATH, WhatsAppSelectors.XPATH_MESSAGE_INPUT)
+            message_input.click()
+            message_input.send_keys(Keys.ENTER)
+            print("[SeleniumDriver] Mensagem enviada via Enter")
+            return True
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao enviar mensagem via Enter: {e}")
+            return False
+
+    def _click_send_button_by_click(self) -> bool:
+        """
+        Envia mensagem clicando no botão de enviar.
+        
+        Returns:
+            True se conseguiu enviar, False caso contrário
+        """
+        try:
+            send_button = self.driver.find_element(By.XPATH, WhatsAppSelectors.XPATH_SEND_BUTTON)
+            send_button.click()
+            print("[SeleniumDriver] Mensagem enviada via clique no botão")
+            return True
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao enviar mensagem via clique: {e}")
+            return False
+
+    # =============================================================================
+    # MÉTODOS PRIVADOS - CONTROLE DE INTERFACE
+    # =============================================================================
+    
+    def _reload_page(self) -> bool:
+        """
+        Reinicia a página.
+        
+        Returns:
+            True se reiniciou com sucesso, False caso contrário
+        """
+        self.driver.execute_script("window.location.reload();")
+        WebDriverWait(self.driver, 10).until(EC.visibility_of_element_located((By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_LOCK_OUTLINE)))
+        return True
+
+    def _click_more_button(self):
+        """Clica no botão mais"""
+        try:
+            more = self.driver.find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_MORE_BUTTON)
+            more.click()
+            return True
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao clicar no botão mais: {e}")
+            return False
+
+    def _close_current_chat(self) -> bool:
+        """Fecha a conversa atual"""
+        try:
+            if not self._click_more_button():
+                raise Exception("[SeleniumDriver] Erro ao clicar no botão mais")
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_CLOSE_CIRCLE_BUTTON))
+            )
+            close_btn = self.driver.find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_CLOSE_CIRCLE_BUTTON)
+            close_btn.click()
+            tm.sleep(1)
+            print("[SeleniumDriver] Conversa fechada")
+            return True
+        except Exception as e:
+            print(f"[SeleniumDriver] Erro ao fechar: {e}")
+            return False

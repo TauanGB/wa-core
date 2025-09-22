@@ -38,7 +38,7 @@ def main():
                     resposta = f"Olá {contato}! Recebi sua mensagem: '{mensagem}'. Como posso ajudar?"
                     
                     # Envia a resposta
-                    if client.send_message(resposta):
+                    if client.send_message(contato, resposta):
                         print("✅ Resposta enviada com sucesso!")
                     else:
                         print("❌ Erro ao enviar resposta")
