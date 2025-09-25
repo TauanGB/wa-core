@@ -170,17 +170,14 @@ class SeleniumDriver:
                 unread = []
                 #TODO Terminar de implementar
                 for chat in new_messages:
-                    contact_name = chat.find_element(By.XPATH, WhatsAppSelectors.XPATH_UNREAD_MESSAGES_CONTACT_NAME).text.strip()
-                    messages_number = chat.find_element(By.XPATH, WhatsAppSelectors.XPATH_UNREAD_MESSAGES_COUNT).text.strip()
+                    contact_name = chat.find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_UNREAD_INSIDE_CONTACT_NAME).text.strip()
+                    messages_number = int(chat.find_element(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_INSIDE_MESSAGES_COUNT).text.strip())
                     
                     unread.append({
                         'contact_name': contact_name,
                         'messages_number': messages_number
                     })
 
-                    
-                    
-            unread = self.driver.find_elements(By.CSS_SELECTOR, WhatsAppSelectors.CSS_SELECTOR_UNREAD_MESSAGES)
             return unread
         except Exception as e:
             print(f"[SeleniumDriver] Erro ao verificar mensagens: {e}")
@@ -547,7 +544,7 @@ class SeleniumDriver:
         try:
             messages = self.driver.find_elements(By.XPATH, WhatsAppSelectors.XPATH_NEW_MESSAGES_CHECK)
             if messages:
-                return messages[1:]
+                return messages
             return []
         except:
             raise Exception("[SeleniumDriver] Erro ao verificar novas mensagens")
